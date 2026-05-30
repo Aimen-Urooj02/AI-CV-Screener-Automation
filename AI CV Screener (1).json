@@ -1,0 +1,296 @@
+{
+  "name": "AI CV Screener",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1yEoBmLkRzxlNdUDxCQtDozWer93mQtSn4F3zAOqCZ1c/edit?resourcekey=&gid=1741060915#gid=1741060915",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1741060915,
+          "mode": "list",
+          "cachedResultName": "Form responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1yEoBmLkRzxlNdUDxCQtDozWer93mQtSn4F3zAOqCZ1c/edit#gid=1741060915"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        0
+      ],
+      "id": "4fd21a3b-96dd-4322-8a22-1a242c0c0245",
+      "name": "Google Sheets Trigger",
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "SImD45KC13hxkMvU",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://www.googleapis.com/drive/v3/files/' + $json['Upload a CV'].split('id=')[1] + '?alt=media' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDriveOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "cv_binary"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -240,
+        0
+      ],
+      "id": "dc4cb78a-b76a-4011-b262-aa6bc7d0a5eb",
+      "name": "HTTP Request",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "8PjSHyMT8pBIRVFW",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst output = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  let base64 = '';\n  \n  // 1. Safely extract the file buffer from the disk using n8n helpers\n  try {\n    const buffer = await this.helpers.getBinaryDataBuffer(i, 'cv_binary');\n    base64 = buffer.toString('base64');\n  } catch (error) {\n    throw new Error(`Could not read file at item index ${i}. Make sure the Google Drive node's 'Output Field Name' is exactly: cv_binary`);\n  }\n\n  // 2. Extract the MIME type (PDF, Word, etc.)\n  const mimeType = item.binary?.cv_binary?.mimeType || 'application/pdf';\n  const formData = item.json;\n\n  // 3. Clean up and organize form fields into the output format\n  output.push({\n    json: {\n      cv_base64: base64,\n      cv_mime_type: mimeType,\n      applicant_name: formData['Full Name'],\n      applicant_email: formData['Email Adress'],\n      role: formData['Role Applying For'],\n      experience_years: formData['Years of Experience'],\n      submitted_at: formData['Timestamp'],\n    }\n  });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -32,
+        0
+      ],
+      "id": "5eab555a-8152-48d9-907d-847d4394c810",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "df56cb19-f11d-4d08-96ed-d12eb5a52457",
+              "name": "text",
+              "value": "{\"score\": 8, \"strengths\": \"The candidate has excellent React and frontend experience.\", \"gaps\": \"Minimal backend knowledge shown in the CV.\", \"recommendation\": \"Yes\"}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        176,
+        0
+      ],
+      "id": "d8e1291e-587b-41ab-8b67-2960cc0e0774",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Grab the fake text response from your mock node\nconst rawText = $input.first().json.text;\n\nlet screening;\ntry {\n  // 2. Turn the text string into clean JSON data\n  screening = JSON.parse(rawText);\n} catch (e) {\n  throw new Error('Could not parse JSON string: ' + rawText);\n}\n\n// 3. Dynamically grab the original applicant data coming into this node\nconst prev = $item(0).$node[\"Edit Fields\"].json;\n\n// 4. Combine everything together into a neat package\nreturn [{\n  json: {\n    ...prev,\n    ai_score: screening.score,\n    ai_strengths: screening.strengths,\n    ai_gaps: screening.gaps,\n    ai_recommendation: screening.recommendation,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        0
+      ],
+      "id": "ff07843c-0eeb-4087-9123-3f7e4c06a4bd",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"parent\": { \"database_id\": \"3706be4e71c58062b1d5e799e20f39d2\" },\n  \"properties\": {\n    \"Name\": { \"title\": [{ \"text\": { \"content\": \"={{ $json.applicant_name }}\" } }] },\n    \"Email\": { \"email\": \"={{ $json.applicant_email }}\" },\n    \"Role\": { \"select\": { \"name\": \"={{ $json.role || 'Developer' }}\" } },\n    \"AI Score\": { \"number\": {{ $json.ai_score }} },\n    \"Strengths\": { \"rich_text\": [{ \"text\": { \"content\": \"={{ $json.ai_strengths }}\" } }] },\n    \"Recommendation\": { \"select\": { \"name\": \"={{ $json.ai_recommendation }}\" } },\n    \"Status\": { \"select\": { \"name\": \"To Review\" } }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        592,
+        0
+      ],
+      "id": "e9a28d72-c517-418f-a771-903e6e5aa31a",
+      "name": "HTTP Request1",
+      "credentials": {
+        "notionApi": {
+          "id": "8nd5wlio0PWt9pkF",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f6ad740a-a245-4f1d-8453-a205a018a04e",
+              "leftValue": "={{ $('Code in JavaScript1').item.json.ai_score }}",
+              "rightValue": 7,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        0
+      ],
+      "id": "38e7a468-27a4-4a02-a5a9-76ac4f7890f6",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "sendTo": "aimenurooj222@gmail.com",
+        "subject": "=🚨 Strong Candidate Alert: {{ $('Code in JavaScript').item.json.applicant_name }} (Score: {{ $('Code in JavaScript1').item.json.ai_score }}/10)",
+        "message": "=<p>Hi Team,</p>\n<p>An exceptional applicant has successfully cleared the automated screening threshold!</p>\n<hr />\n<h3>Candidate Tracking Record</h3>\n<ul>\n  <li><strong>Name:</strong> {{ $(\"Code in JavaScript\").item.json.applicant_name }}</li>\n  <li><strong>Email:</strong> {{ $(\"Code in JavaScript\").item.json.applicant_email }}</li>\n  <li><strong>Assigned Fit Score:</strong> {{ $(\"Code in JavaScript1\").item.json.ai_score }}/10</li>\n  <li><strong>Recommendation:</strong> {{ $(\"Code in JavaScript1\").item.json.ai_recommendation }}</li>\n</ul>\n<hr />\n<p>👉 <strong><a href=\"={{ $(\"HTTP Request1\").item.json.url }}\">Click here to open and review this applicant card directly inside Notion</a></strong></p>\n<p>Best regards,<br/>TalentBoard Automation Engine</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1008,
+        -96
+      ],
+      "id": "a1006928-84f5-470d-a05d-fc9f24872da6",
+      "name": "Send a message",
+      "webhookId": "b21c7fb9-422f-4b6f-a023-f746ea9da518",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "71U6PE1IJ3zxxleR",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5cd2f303-f11c-4893-94fa-ff180e05e513",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "af17728dc4de02a7a394d7547461b313cf45fa48693962a3931f3a2fd0ca6280"
+  },
+  "id": "I4W8OF7SsQwO6Nd2",
+  "tags": []
+}
